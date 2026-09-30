@@ -1,0 +1,7 @@
+services:
+  dental-registration-form:
+    build: .
+    container_name: dental-registration-form
+    ports:
+      - "8181:80"
+    restart: unless-stopped
