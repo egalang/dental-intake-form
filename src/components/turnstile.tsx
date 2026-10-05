@@ -12,6 +12,7 @@ interface TurnstileRenderOptions {
   sitekey: string
   theme?: "light" | "dark" | "auto"
   size?: "normal" | "compact" | "flexible"
+  action?: string
   callback?: (token: string) => void
   "expired-callback"?: () => void
   "timeout-callback"?: () => void
@@ -106,6 +107,7 @@ export const Turnstile = React.forwardRef<TurnstileHandle, TurnstileProps>(
           if (!window.turnstile) throw new Error("Turnstile unavailable")
           widgetIdRef.current = window.turnstile.render(containerRef.current, {
             sitekey: siteKey,
+            action: "public_registration",
             theme: "auto",
             callback: (token) => callbacksRef.current.onVerify(token),
             "expired-callback": () => callbacksRef.current.onExpire?.(),
