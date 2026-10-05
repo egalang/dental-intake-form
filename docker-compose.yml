@@ -1,6 +1,10 @@
 services:
   dental-registration-form:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_REGISTRATION_API_URL: ${VITE_REGISTRATION_API_URL:-}
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
     container_name: dental-registration-form
     ports:
       - "8181:80"

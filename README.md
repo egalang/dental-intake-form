@@ -7,7 +7,7 @@ Tailwind CSS v4) on Vite + React + TypeScript.
 It submits registrations to:
 
 ```
-POST https://dental-registration.angorizaral.net/api/v1/public/registrations
+POST https://dental-registration.angonorizal.net/api/v1/public/registrations
 ```
 
 ## Features
@@ -58,7 +58,7 @@ fields are sent as `null`:
   "gender": "male",
   "street_number": "12",
   "street_name": "Sample Street",
-  "brgy": "San Roque",
+  "brgy": "san roque",
   "cellphone": "0912-3456789"
 }
 ```
@@ -69,23 +69,42 @@ fields are sent as `null`:
 | --- | --- | --- |
 | Last name | `last_name` | required |
 | First name | `first_name` | required |
-| Middle name | `middle_name` | optional → `null` |
-| Suffix | `suffix` | optional (Jr., Sr., II–V) → `null` |
+| Middle name | `middle_name` | required |
+| Suffix | `suffix` | optional (Jr., Sr., III–V) → `null` |
 | Date of birth | `date_of_birth` | required, `YYYY-MM-DD` |
 | Gender | `gender` | required, `male` / `female` |
-| Street number | `street_number` | optional → `null` |
-| Street name | `street_name` | optional → `null` |
-| Barangay | `brgy` | required, Angono barangay list |
-| Cellphone | `cellphone` | required, PH mobile format |
+| Street number | `street_number` | required |
+| Street name | `street_name` | required |
+| Barangay | `brgy` | required, lowercase Angono barangay value (e.g. `san roque`) |
+| Cellphone | `cellphone` | optional → `null`, else `09XX-XXXXXXX` |
 
 ### Configuration
 
-Copy `.env.example` to `.env` to override the API base URL:
+Copy `.env.example` to `.env` to override build-time settings:
 
-- **Empty (default)** — call the API on the same origin (`/api/...`); the Vite dev
-  proxy and the production nginx config forward these to the real API.
-- **Absolute URL** — call the API directly from the browser (requires CORS on the
-  API).
+- **`VITE_REGISTRATION_API_URL`** — Empty (default) calls the API on the same
+  origin (`/api/...`); the Vite dev proxy and the production nginx config forward
+  these to the real API. An absolute URL calls the API directly from the browser
+  (requires CORS on the API).
+- **`VITE_TURNSTILE_SITE_KEY`** — Public Cloudflare Turnstile site key. Defaults
+  to the bundled key when unset. The matching **secret** key must stay on the API
+  server and must never be shipped to the browser.
+
+Because `.env` is excluded from the Docker build context, pass these as build
+args instead when using Docker (compose reads them from the host `.env`):
+
+```bash
+VITE_REGISTRATION_API_URL= VITE_TURNSTILE_SITE_KEY=0x... docker compose up -d --build
+```
+
+### Bot protection (Cloudflare Turnstile)
+
+The public API requires a Turnstile token. The form renders the widget
+(`src/components/turnstile.tsx`), waits for a token before submitting, and sends
+it as the `turnstile_token` JSON field (`src/lib/patient.ts`). Tokens are
+single-use, so the widget is reset after every submit attempt. If the API expects
+a different field name, change `TURNSTILE_FIELD` in `src/lib/patient.ts`.
+
 
 ## Docker
 
@@ -108,6 +127,7 @@ src/
   App.tsx                          Page shell + ConfirmProvider
   components/
     patient-intake-form.tsx        The intake form
+    turnstile.tsx                  Cloudflare Turnstile widget
     micto/                         MICTO UI Kit components
     ui/                            shadcn/ui primitives
   lib/

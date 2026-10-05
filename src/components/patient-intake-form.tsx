@@ -8,6 +8,7 @@ import { DatePicker } from "@/components/micto/date-picker"
 import { SearchSelect } from "@/components/micto/search-select"
 import { SampleCard } from "@/components/micto/sample-card"
 import { confirmDialog } from "@/components/micto/confirm-dialog"
+import { Turnstile, type TurnstileHandle } from "@/components/turnstile"
 import { cn } from "@/lib/utils"
 import {
   ANGONO_BARANGAYS,
@@ -16,6 +17,7 @@ import {
   SUFFIX_OPTIONS,
   submitRegistration,
   toPayload,
+  TURNSTILE_SITE_KEY,
   type PatientIntakeFormValues,
   type RegistrationResult,
 } from "@/lib/patient"
@@ -38,6 +40,7 @@ function validate(values: PatientIntakeFormValues): FieldErrors {
 
   if (!values.last_name.trim()) errors.last_name = "Last name is required."
   if (!values.first_name.trim()) errors.first_name = "First name is required."
+  if (!values.middle_name.trim()) errors.middle_name = "Middle name is required."
 
   if (!values.date_of_birth) {
     errors.date_of_birth = "Date of birth is required."
@@ -54,10 +57,10 @@ function validate(values: PatientIntakeFormValues): FieldErrors {
 
   if (!values.gender) errors.gender = "Please select a gender."
   if (!values.brgy.trim()) errors.brgy = "Please select a barangay."
+  if (!values.street_number.trim()) errors.street_number = "Street number is required."
+  if (!values.street_name.trim()) errors.street_name = "Street name is required."
 
-  if (!values.cellphone.trim()) {
-    errors.cellphone = "Cellphone number is required."
-  } else if (!isValidPhMobile(values.cellphone)) {
+  if (values.cellphone.trim() && !isValidPhMobile(values.cellphone)) {
     errors.cellphone = "Enter a valid PH mobile number (e.g. 0912-3456789)."
   }
 
@@ -95,6 +98,15 @@ export function PatientIntakeForm() {
   const [errors, setErrors] = React.useState<FieldErrors>({})
   const [submitting, setSubmitting] = React.useState(false)
   const [result, setResult] = React.useState<RegistrationResult | null>(null)
+  const [turnstileToken, setTurnstileToken] = React.useState("")
+  const [turnstileError, setTurnstileError] = React.useState("")
+  const turnstileRef = React.useRef<TurnstileHandle>(null)
+
+  const resetTurnstile = React.useCallback(() => {
+    setTurnstileToken("")
+    setTurnstileError("")
+    turnstileRef.current?.reset()
+  }, [])
 
   const set = <K extends keyof PatientIntakeFormValues>(
     key: K,
@@ -108,6 +120,7 @@ export function PatientIntakeForm() {
     setValues(EMPTY_FORM)
     setErrors({})
     setResult(null)
+    resetTurnstile()
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -117,6 +130,11 @@ export function PatientIntakeForm() {
     const validationErrors = validate(values)
     setErrors(validationErrors)
     if (Object.keys(validationErrors).length > 0) {
+      return
+    }
+
+    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+      setTurnstileError("Please complete the verification challenge.")
       return
     }
 
@@ -139,8 +157,11 @@ export function PatientIntakeForm() {
     setSubmitting(true)
     setResult(null)
     try {
-      const response = await submitRegistration(payload)
+      const response = await submitRegistration(payload, turnstileToken)
       setResult(response)
+      if (!response.ok) {
+        resetTurnstile()
+      }
     } finally {
       setSubmitting(false)
     }
@@ -208,13 +229,14 @@ export function PatientIntakeForm() {
               />
             </Field>
 
-            <Field label="Middle name" htmlFor="middle_name" error={errors.middle_name}>
+            <Field label="Middle name" htmlFor="middle_name" required error={errors.middle_name}>
               <Input
                 id="middle_name"
                 name="middle_name"
                 autoComplete="additional-name"
                 value={values.middle_name}
                 onChange={(e) => set("middle_name", e.target.value)}
+                aria-invalid={Boolean(errors.middle_name)}
                 placeholder="Santos"
               />
             </Field>
@@ -255,22 +277,24 @@ export function PatientIntakeForm() {
 
           {/* Address */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Street number" htmlFor="street_number" error={errors.street_number}>
+            <Field label="Street number" htmlFor="street_number" required error={errors.street_number}>
               <Input
                 id="street_number"
                 name="street_number"
                 value={values.street_number}
                 onChange={(e) => set("street_number", e.target.value)}
+                aria-invalid={Boolean(errors.street_number)}
                 placeholder="12"
               />
             </Field>
 
-            <Field label="Street name" htmlFor="street_name" error={errors.street_name}>
+            <Field label="Street name" htmlFor="street_name" required error={errors.street_name}>
               <Input
                 id="street_name"
                 name="street_name"
                 value={values.street_name}
                 onChange={(e) => set("street_name", e.target.value)}
+                aria-invalid={Boolean(errors.street_name)}
                 placeholder="Sample Street"
               />
             </Field>
@@ -289,7 +313,7 @@ export function PatientIntakeForm() {
 
           {/* Contact */}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Cellphone number" htmlFor="cellphone" required error={errors.cellphone}>
+            <Field label="Cellphone number" htmlFor="cellphone" error={errors.cellphone}>
               <Input
                 id="cellphone"
                 name="cellphone"
@@ -304,6 +328,27 @@ export function PatientIntakeForm() {
             </Field>
           </div>
         </fieldset>
+
+        {TURNSTILE_SITE_KEY ? (
+          <Field label="Verification" required error={turnstileError}>
+            <Turnstile
+              ref={turnstileRef}
+              siteKey={TURNSTILE_SITE_KEY}
+              onVerify={(token) => {
+                setTurnstileToken(token)
+                setTurnstileError("")
+              }}
+              onExpire={() => setTurnstileToken("")}
+              onError={(errorCode) =>
+                setTurnstileError(
+                  errorCode === "110200"
+                    ? "Verification is not authorized for this domain. Please contact the site administrator."
+                    : "Verification could not be loaded. Please refresh the page and try again.",
+                )
+              }
+            />
+          </Field>
+        ) : null}
 
         {result && !result.ok ? (
           <div

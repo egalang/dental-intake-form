@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig } from "vite"
 
-const REGISTRATION_API = "https://dental-registration.angorizaral.net"
+const REGISTRATION_API = "https://dental-registration.angonorizal.net"
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -15,7 +15,7 @@ export default defineConfig({
   },
   server: {
     host: true,
-    allowedHosts: ["dental-registration.angorizaral.net", "localhost"],
+    allowedHosts: ["dental-registration.angonorizal.net", "localhost"],
     // Same-origin API calls (see src/lib/patient.ts). Proxied here in dev and by
     // nginx in production so the browser never makes a cross-origin request.
     proxy: {

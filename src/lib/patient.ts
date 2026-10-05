@@ -2,7 +2,7 @@
  * Patient registration domain types, reference data, and API client.
  *
  * Field names map 1:1 to the public registration endpoint:
- *   POST https://dental-registration.angorizaral.net/api/v1/public/registrations
+ *   POST https://dental-registration.angonorizal.net/api/v1/public/registrations
  */
 import type { SearchSelectOption } from "@/components/micto/search-select"
 
@@ -12,14 +12,14 @@ export type Gender = "male" | "female"
 export interface PatientRegistrationPayload {
   last_name: string
   first_name: string
-  middle_name: string | null
+  middle_name: string
   suffix: string | null
   date_of_birth: string
   gender: Gender
-  street_number: string | null
-  street_name: string | null
+  street_number: string
+  street_name: string
   brgy: string
-  cellphone: string
+  cellphone: string | null
 }
 
 /** Shape of the form while the user is editing (no nulls, plain strings). */
@@ -63,19 +63,35 @@ export const SUFFIX_OPTIONS: SearchSelectOption[] = [
   { value: "V", label: "V" },
 ]
 
-/** Barangays of Angono, Rizal. */
+/**
+ * Barangays of Angono, Rizal. The API validates `brgy` against lowercase
+ * values, so `value` is lowercase while `label` is the display name.
+ */
 export const ANGONO_BARANGAYS: SearchSelectOption[] = [
-  "Bagumbayan",
-  "Kalayaan",
-  "Mahabang Parang",
-  "Poblacion Ibaba",
-  "Poblacion Itaas",
-  "San Isidro",
-  "San Pedro",
-  "San Roque",
-  "San Vicente",
-  "Santo Niño",
-].map((name) => ({ value: name, label: name }))
+  ["santo niño", "Sto. Niño"],
+  ["kalayaan", "Kalayaan"],
+  ["san roque", "San Roque"],
+  ["san isidro", "San Isidro"],
+  ["san pedro", "San Pedro"],
+  ["san vicente", "San Vicente"],
+  ["bagumbayan", "Bagumbayan"],
+  ["poblacion ibaba", "Poblacion Ibaba"],
+  ["mahabang parang", "Mahabang Parang"],
+  ["poblacion itaas", "Poblacion Itaas"],
+].map(([value, label]) => ({ value, label }))
+
+/**
+ * Normalize a PH mobile number to the API's expected `09XX-XXXXXXX` form.
+ * Accepts bare digits or a `+63`/`63` prefix; returns the trimmed input
+ * unchanged when it cannot be interpreted, so server validation can report it.
+ */
+export function formatPhMobile(raw: string): string {
+  const digits = raw.replace(/[^\d]/g, "")
+  const local = digits.startsWith("63") ? `0${digits.slice(2)}` : digits
+  return /^09\d{9}$/.test(local)
+    ? `${local.slice(0, 4)}-${local.slice(4)}`
+    : raw.trim()
+}
 
 /** Convert the editable form state into the API payload. */
 export function toPayload(values: PatientIntakeFormValues): PatientRegistrationPayload {
@@ -85,17 +101,19 @@ export function toPayload(values: PatientIntakeFormValues): PatientRegistrationP
     return t.length > 0 ? t : null
   }
 
+  const cellphone = orNull(values.cellphone)
+
   return {
     last_name: trimmed(values.last_name),
     first_name: trimmed(values.first_name),
-    middle_name: orNull(values.middle_name),
+    middle_name: trimmed(values.middle_name),
     suffix: orNull(values.suffix),
     date_of_birth: values.date_of_birth.slice(0, 10), // DatePicker returns "yyyy-MM-dd HH:mm"
     gender: (values.gender === "female" ? "female" : "male") as Gender,
-    street_number: orNull(values.street_number),
-    street_name: orNull(values.street_name),
+    street_number: trimmed(values.street_number),
+    street_name: trimmed(values.street_name),
     brgy: trimmed(values.brgy),
-    cellphone: trimmed(values.cellphone),
+    cellphone: cellphone ? formatPhMobile(cellphone) : null,
   }
 }
 
@@ -111,6 +129,17 @@ const API_BASE_URL: string =
   import.meta.env.VITE_REGISTRATION_API_URL ?? ""
 
 const REGISTRATIONS_PATH = "/api/v1/public/registrations"
+
+/**
+ * Public Cloudflare Turnstile site key. Safe to expose in the browser; the
+ * matching secret key is verified server-side. Overridable at build time via
+ * `VITE_TURNSTILE_SITE_KEY`.
+ */
+export const TURNSTILE_SITE_KEY: string =
+  import.meta.env.VITE_TURNSTILE_SITE_KEY || "0x4AAAAAAFKudkMQvbGBPoLK"
+
+/** Request body field the API expects the Turnstile token in. */
+const TURNSTILE_FIELD = "turnstile_token"
 
 /** Extract a human-readable error message from an unknown API error body. */
 function extractErrorMessage(body: unknown, fallback: string): string {
@@ -136,15 +165,20 @@ function extractErrorMessage(body: unknown, fallback: string): string {
  */
 export async function submitRegistration(
   payload: PatientRegistrationPayload,
+  turnstileToken?: string,
 ): Promise<RegistrationResult> {
   try {
+    const body = turnstileToken
+      ? { ...payload, [TURNSTILE_FIELD]: turnstileToken }
+      : payload
+
     const response = await fetch(`${API_BASE_URL}${REGISTRATIONS_PATH}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     })
 
     const text = await response.text()
